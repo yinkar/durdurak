@@ -1,0 +1,132 @@
+#!/usr/bin/php
+<?php
+
+if (php_sapi_name() !== 'cli') {
+    exit;
+}
+
+const STANDARD = 0;
+const GREEN    = 1;
+const CYAN     = 2;
+const RED      = 3;
+
+$pageTemplate = '
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%s</title>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+        table, th, td {
+            border: 1px solid;
+        }
+    </style>
+</head>
+<body>
+    %s
+</body>
+</html>
+';
+
+require_once 'vendor/autoload.php';
+
+extract(include('config.php'));
+
+$markdownFullPath = implode('/', [ $contentPath, $postsPath ]);
+
+$Parsedown = new Parsedown();
+
+// Get file names with path and eliminate dots
+$markdownFileNames = array_values(
+    array_map(
+        fn($e) => sprintf('%s/%s', $markdownFullPath, $e),
+        array_filter(
+            scandir($markdownFullPath),
+            fn($e) => !in_array($e, [ '.', '..' ])
+        )
+    )
+);
+
+$htmlPages = [];
+
+foreach ($markdownFileNames as $markdownFileName) {
+    logToConsole(sprintf('%s is started to process...', $markdownFileName), CYAN);
+
+    $outPath = implode(
+        '/', [ $publicPath, $postsPath ]
+    );
+
+    $outFullpath = sprintf(
+        '%s/%s.html', 
+        $outPath,
+        basename($markdownFileName, '.md')
+    );
+
+    $htmlPages[] = (function() use ($outFullpath) {
+        $pathArray = explode('/', $outFullpath);
+        unset($pathArray[0]);
+        return implode('/', $pathArray);
+    })();
+
+    if (!file_exists($outPath)) {
+        mkdir($outPath, 0777, true);
+    }
+
+    $content = file_get_contents($markdownFileName);
+
+    $htmlContent = $Parsedown->text($content);
+
+    file_put_contents($outFullpath, sprintf($pageTemplate, $siteTitle, $htmlContent));
+    
+    logToConsole(sprintf('%s is generated.', $outFullpath), GREEN);
+}
+
+generateHomePage($htmlPages, $publicPath, $siteTitle, $pageTemplate);
+
+logToConsole(sprintf('%s as home page is generated.', $outFullpath), GREEN);
+
+function generateHomePage($posts, $sitePath, $siteTitle, $pageTemplate) {
+    $links = [];
+
+    foreach ($posts as $post) {
+        $links[] = sprintf('<a href="%s">%s</a>', $post, $post);
+    }
+
+    $content = sprintf(
+        $pageTemplate, 
+        $siteTitle, 
+        sprintf('<ul>%s</ul>', 
+            implode(
+                "\r\n", 
+                array_map(fn($d) => sprintf('<li>%s</li>', $d), $links)
+            )
+        )
+    );
+
+    $homePagePath = implode('/', [ $sitePath, 'index.html' ]);
+
+    file_put_contents($homePagePath, $content);
+}
+
+function logToConsole($text, $color = STANDARD) {
+    switch ($color) {
+        case GREEN:
+            echo sprintf('[32m%s[0m', $text);
+            break;
+        case CYAN:
+            echo sprintf('[36m%s[0m', $text);
+            break;
+        case RED:
+            echo sprintf('[31m%s[0m', $text);
+            break;
+        default:
+            echo $text;
+    }
+
+    echo PHP_EOL;
+}
